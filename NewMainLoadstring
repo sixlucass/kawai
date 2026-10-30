@@ -34,6 +34,7 @@ local GAMES = {
 
 local LOAD_TIME = 1.2
 local SETTINGS_FILE = "GameHub_Settings.json"
+local KEY_FILE = "Kawai_SavedKey.txt"
 
 local C = {
 	Window = Color3.fromRGB(11, 11, 11),
@@ -222,23 +223,25 @@ local function httpGet(url)
 	return game:HttpGet(url), 200
 end
 
+-- Returns: success, keyOrMessage, reachable
+-- reachable = false means the server could not be contacted (don't delete a saved key for that)
 local function validateKey(text)
 	local key = (tostring(text):gsub("%s+", "")):upper()
 	if key == "" then
-		return false, "Enter your key first."
+		return false, "Enter your key first.", true
 	end
 	local ok, body = pcall(httpGet, SERVER .. "/validate?key=" .. HttpService:UrlEncode(key))
 	if not ok then
-		return false, "Could not reach the key server."
+		return false, "Could not reach the key server.", false
 	end
 	local decodeOk, data = pcall(HttpService.JSONDecode, HttpService, body)
 	if not decodeOk then
-		return false, "Could not reach the key server."
+		return false, "Could not reach the key server.", false
 	end
 	if data.valid then
-		return true, key
+		return true, key, true
 	end
-	return false, data.message or "That key is not valid."
+	return false, data.message or "That key is not valid.", true
 end
 
 local hubSettings = { AutoLoad = false }
@@ -255,6 +258,33 @@ local function saveHubSettings()
 	pcall(function()
 		if writefile then
 			writefile(SETTINGS_FILE, HttpService:JSONEncode(hubSettings))
+		end
+	end)
+end
+
+local function loadSavedKey()
+	local ok, key = pcall(function()
+		if isfile and readfile and isfile(KEY_FILE) then
+			return readfile(KEY_FILE)
+		end
+	end)
+	if ok and type(key) == "string" and key:match("%S") then
+		return key
+	end
+end
+
+local function saveKey(key)
+	pcall(function()
+		if writefile then
+			writefile(KEY_FILE, key)
+		end
+	end)
+end
+
+local function clearSavedKey()
+	pcall(function()
+		if delfile and isfile and isfile(KEY_FILE) then
+			delfile(KEY_FILE)
 		end
 	end)
 end
@@ -657,7 +687,7 @@ local function buildHub()
 	end)
 end
 
-local function buildKeySystem()
+local function buildKeySystem(initialMessage)
 	local gui = new("ScreenGui", {
 		Name = "KawaiKeySystem",
 		ResetOnSpawn = false,
@@ -796,6 +826,10 @@ local function buildKeySystem()
 		helper.TextColor3 = color or C.Sub
 	end
 
+	if initialMessage then
+		setStatus(initialMessage, C.Error)
+	end
+
 	local function makeButton(text, position, size, filled)
 		local btn = new("TextButton", {
 			Position = position,
@@ -899,6 +933,7 @@ local function buildKeySystem()
 		end
 
 		setStatus("Key accepted. Loading...", C.Accent)
+		saveKey(result)
 		task.wait(0.3)
 		gui:Destroy()
 		buildHub()
@@ -956,4 +991,19 @@ local function buildKeySystem()
 	end)
 end
 
-buildKeySystem()
+-- Auto-login with saved key
+local savedKey = loadSavedKey()
+
+if savedKey then
+	local ok, _, reachable = validateKey(savedKey)
+	if ok then
+		buildHub()
+	elseif reachable then
+		clearSavedKey()
+		buildKeySystem("Your saved key expired. Press Get Key to get a new one, then paste it here.")
+	else
+		buildKeySystem("Could not reach the key server. Check your connection and press Redeem Key to retry.")
+	end
+else
+	buildKeySystem()
+end
