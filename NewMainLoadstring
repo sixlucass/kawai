@@ -15,6 +15,12 @@ local GAMES = {
 		Icon = "swords",
 		Url = "https://raw.githubusercontent.com/sixlucass/kawai/refs/heads/main/Games/Rivals",
 	},
+	{
+		Name = "Da Hood",
+		PlaceIds = { 2788229376 },
+		Icon = "flame",
+		Url = "https://raw.githubusercontent.com/sixlucass/kawai/refs/heads/main/Games/DaHood",
+	},
 }
 
 local LOAD_TIME = 1.2
@@ -108,10 +114,11 @@ local ALIASES = {
 	house = { "house", "home" },
 	settings = { "settings", "settings-2", "cog" },
 	swords = { "swords", "sword" },
+	flame = { "flame", "fire" },
 	x = { "x" },
 }
 
-local FALLBACK = { ["gamepad-2"] = "G", settings = "S", x = "X", swords = "R", cat = "K" }
+local FALLBACK = { ["gamepad-2"] = "G", settings = "S", x = "X", swords = "R", flame = "D", cat = "K" }
 
 local function resolveIcon(name)
 	for _, alias in ipairs(ALIASES[name] or { name }) do
