@@ -1,12 +1,21 @@
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
-local ContentProvider = game:GetService("ContentProvider")
-local MarketplaceService = game:GetService("MarketplaceService")
 local HttpService = game:GetService("HttpService")
 local CoreGui = game:GetService("CoreGui")
+local ContentProvider = game:GetService("ContentProvider")
+local MarketplaceService = game:GetService("MarketplaceService")
 
 local LocalPlayer = Players.LocalPlayer
+
+local SERVER = "https://kawai.sumerlucass.workers.dev"
+local KEY_LIFETIME = 86400
+local DISCORD_URL = "https://discord.gg/JrH4n597sa"
+local HELP_TEXT = "Tap a provider below to copy its key link, open it in your browser, then paste the key you get back here."
+
+local PROVIDERS = {
+	{ Name = "kawai", Url = "https://kawai.oneapp.dev/" },
+}
 
 local GAMES = {
 	{
@@ -27,17 +36,19 @@ local LOAD_TIME = 1.2
 local SETTINGS_FILE = "GameHub_Settings.json"
 
 local C = {
-	Window = Color3.fromRGB(10, 10, 10),
+	Window = Color3.fromRGB(11, 11, 11),
 	Panel = Color3.fromRGB(22, 22, 22),
-	PanelHover = Color3.fromRGB(36, 36, 36),
-	Line = Color3.fromRGB(34, 34, 34),
-	Text = Color3.fromRGB(240, 240, 240),
-	SubText = Color3.fromRGB(135, 135, 135),
+	PanelHover = Color3.fromRGB(34, 34, 34),
+	Line = Color3.fromRGB(32, 32, 32),
+	Text = Color3.fromRGB(242, 242, 242),
+	Sub = Color3.fromRGB(128, 128, 128),
+	Answer = Color3.fromRGB(215, 215, 215),
 	White = Color3.fromRGB(255, 255, 255),
-	Black = Color3.fromRGB(0, 0, 0),
-	On = Color3.fromRGB(110, 195, 255),
+	Dark = Color3.fromRGB(8, 8, 8),
+	Accent = Color3.fromRGB(110, 195, 255),
+	AccentHover = Color3.fromRGB(150, 215, 255),
 	Off = Color3.fromRGB(52, 52, 52),
-	Danger = Color3.fromRGB(235, 80, 80),
+	Error = Color3.fromRGB(235, 90, 90),
 }
 
 local function new(class, props, parent)
@@ -57,23 +68,12 @@ local function tween(inst, time, props)
 	TweenService:Create(inst, TweenInfo.new(time, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props):Play()
 end
 
-local settings = { AutoLoad = false }
-
-pcall(function()
-	if isfile and readfile and isfile(SETTINGS_FILE) then
-		local data = HttpService:JSONDecode(readfile(SETTINGS_FILE))
-		if type(data) == "table" then
-			settings.AutoLoad = data.AutoLoad == true
-		end
+local function copyText(text)
+	local fn = setclipboard or toclipboard
+	if fn then
+		return pcall(fn, text)
 	end
-end)
-
-local function saveSettings()
-	pcall(function()
-		if writefile then
-			writefile(SETTINGS_FILE, HttpService:JSONEncode(settings))
-		end
-	end)
+	return false
 end
 
 local function getGuiParent()
@@ -90,9 +90,11 @@ local function getGuiParent()
 end
 
 local guiParent = getGuiParent()
-local previous = guiParent:FindFirstChild("GameHub")
-if previous then
-	previous:Destroy()
+for _, oldName in ipairs({ "KawaiKeySystem", "KawaiHub", "GameHub" }) do
+	local existing = guiParent:FindFirstChild(oldName)
+	if existing then
+		existing:Destroy()
+	end
 end
 
 local function tryLoad(url)
@@ -111,14 +113,25 @@ end
 local RayfieldIcons = tryLoad("https://raw.githubusercontent.com/SiriusSoftwareLtd/Rayfield/main/icons.lua")
 
 local ALIASES = {
+	cat = { "cat" },
+	x = { "x" },
+	["chevron-down"] = { "chevron-down" },
 	house = { "house", "home" },
 	settings = { "settings", "settings-2", "cog" },
 	swords = { "swords", "sword" },
 	flame = { "flame", "fire" },
-	x = { "x" },
+	["gamepad-2"] = { "gamepad-2" },
 }
 
-local FALLBACK = { ["gamepad-2"] = "G", settings = "S", x = "X", swords = "R", flame = "D", cat = "K" }
+local FALLBACK = {
+	cat = "K",
+	x = "X",
+	["chevron-down"] = "v",
+	["gamepad-2"] = "G",
+	settings = "S",
+	swords = "R",
+	flame = "D",
+}
 
 local function resolveIcon(name)
 	for _, alias in ipairs(ALIASES[name] or { name }) do
@@ -190,398 +203,757 @@ local function makeIcon(parent, name, size, color, position, anchor)
 	return img
 end
 
-local gui = new("ScreenGui", {
-	Name = "GameHub",
-	ResetOnSpawn = false,
-	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-	IgnoreGuiInset = true,
-}, guiParent)
-
-local window = new("Frame", {
-	Name = "Window",
-	AnchorPoint = Vector2.new(0.5, 0.5),
-	Position = UDim2.fromScale(0.5, 0.5),
-	Size = UDim2.fromScale(0.6, 0.72),
-	BackgroundColor3 = C.Window,
-	BorderSizePixel = 0,
-}, gui)
-corner(window, 22)
-new("UISizeConstraint", { MaxSize = Vector2.new(860, 540), MinSize = Vector2.new(460, 320) }, window)
-
-local topBar = new("Frame", {
-	Name = "TopBar",
-	Size = UDim2.new(1, 0, 0, 66),
-	BackgroundTransparency = 1,
-}, window)
-
-local title = new("Frame", {
-	BackgroundTransparency = 1,
-	Position = UDim2.fromOffset(26, 0),
-	Size = UDim2.new(0, 200, 1, 0),
-}, topBar)
-makeIcon(title, "cat", 26, C.White, UDim2.fromScale(0, 0.5), Vector2.new(0, 0.5))
-new("TextLabel", {
-	BackgroundTransparency = 1,
-	Position = UDim2.fromOffset(36, 0),
-	Size = UDim2.new(1, -36, 1, 0),
-	Font = Enum.Font.GothamBold,
-	Text = "kawai",
-	TextColor3 = C.White,
-	TextSize = 20,
-	TextXAlignment = Enum.TextXAlignment.Left,
-}, title)
-
-do
-	local dragging, dragStart, startPos
-	topBar.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			dragging = true
-			dragStart = input.Position
-			startPos = window.Position
-			input.Changed:Connect(function()
-				if input.UserInputState == Enum.UserInputState.End then
-					dragging = false
-				end
-			end)
-		end
-	end)
-	UserInputService.InputChanged:Connect(function(input)
-		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-			local delta = input.Position - dragStart
-			window.Position = UDim2.new(
-				startPos.X.Scale,
-				startPos.X.Offset + delta.X,
-				startPos.Y.Scale,
-				startPos.Y.Offset + delta.Y
-			)
-		end
-	end)
-end
-
-local tabHolder = new("Frame", {
-	BackgroundTransparency = 1,
-	AnchorPoint = Vector2.new(1, 0.5),
-	Position = UDim2.new(1, -22, 0.5, 0),
-	Size = UDim2.fromOffset(0, 40),
-	AutomaticSize = Enum.AutomaticSize.X,
-}, topBar)
-new("UIListLayout", {
-	FillDirection = Enum.FillDirection.Horizontal,
-	HorizontalAlignment = Enum.HorizontalAlignment.Right,
-	VerticalAlignment = Enum.VerticalAlignment.Center,
-	SortOrder = Enum.SortOrder.LayoutOrder,
-	Padding = UDim.new(0, 8),
-}, tabHolder)
-
-local pages = {}
-local tabButtons = {}
-local currentTab
-
-local function paintTab(name, hovered)
-	local icon = tabButtons[name].Icon
-	local active = name == currentTab
-	local color = active and C.White or (hovered and C.Text or C.SubText)
-	tween(icon, 0.15, { ImageColor3 = color })
-	for _, child in ipairs(icon:GetChildren()) do
-		if child:IsA("TextLabel") then
-			child.TextColor3 = color
-		end
+local function describeDuration(seconds)
+	if seconds >= 3600 then
+		local hours = math.floor(seconds / 3600)
+		return hours .. (hours == 1 and " hour" or " hours")
+	elseif seconds >= 60 then
+		local minutes = math.floor(seconds / 60)
+		return minutes .. (minutes == 1 and " minute" or " minutes")
 	end
+	return seconds .. (seconds == 1 and " second" or " seconds")
 end
 
-local function setTab(name)
-	currentTab = name
-	for pageName, page in pairs(pages) do
-		page.Visible = pageName == name
+local function httpGet(url)
+	if request then
+		local res = request({ Url = url, Method = "GET" })
+		return res.Body, res.StatusCode
 	end
-	for tabName in pairs(tabButtons) do
-		paintTab(tabName, false)
+	return game:HttpGet(url), 200
+end
+
+local function validateKey(text)
+	local key = (tostring(text):gsub("%s+", "")):upper()
+	if key == "" then
+		return false, "Enter your key first."
 	end
-end
-
-local function makeTab(name, icon, order)
-	local btn = new("TextButton", {
-		Name = name,
-		LayoutOrder = order,
-		Size = UDim2.fromOffset(40, 40),
-		BackgroundTransparency = 1,
-		AutoButtonColor = false,
-		Text = "",
-	}, tabHolder)
-
-	local img = makeIcon(btn, icon, 24, C.SubText, UDim2.fromScale(0.5, 0.5), Vector2.new(0.5, 0.5))
-	img.Name = "Icon"
-	tabButtons[name] = btn
-
-	btn.MouseEnter:Connect(function()
-		paintTab(name, true)
-	end)
-	btn.MouseLeave:Connect(function()
-		paintTab(name, false)
-	end)
-	btn.Activated:Connect(function()
-		setTab(name)
-	end)
-end
-
-makeTab("Home", "gamepad-2", 1)
-makeTab("Settings", "settings", 2)
-
-do
-	local close = new("TextButton", {
-		LayoutOrder = 3,
-		Size = UDim2.fromOffset(40, 40),
-		BackgroundTransparency = 1,
-		AutoButtonColor = false,
-		Text = "",
-	}, tabHolder)
-	local closeIcon = makeIcon(close, "x", 24, C.SubText, UDim2.fromScale(0.5, 0.5), Vector2.new(0.5, 0.5))
-	close.MouseEnter:Connect(function()
-		tween(closeIcon, 0.15, { ImageColor3 = C.Danger })
-	end)
-	close.MouseLeave:Connect(function()
-		tween(closeIcon, 0.15, { ImageColor3 = C.SubText })
-	end)
-	close.Activated:Connect(function()
-		gui:Destroy()
-	end)
-end
-
-local content = new("Frame", {
-	Name = "Content",
-	Position = UDim2.fromOffset(0, 67),
-	Size = UDim2.new(1, 0, 1, -67),
-	BackgroundTransparency = 1,
-}, window)
-
-local function runGame(g)
-	task.spawn(function()
-		loadstring(game:HttpGet(g.Url))()
-	end)
-end
-
-local function launch(g)
-	gui:Destroy()
-	runGame(g)
-end
-
-local function findCurrentGame()
-	for _, g in ipairs(GAMES) do
-		if table.find(g.PlaceIds, game.PlaceId) then
-			return g
-		end
+	local ok, body = pcall(httpGet, SERVER .. "/validate?key=" .. HttpService:UrlEncode(key))
+	if not ok then
+		return false, "Could not reach the key server."
 	end
+	local decodeOk, data = pcall(HttpService.JSONDecode, HttpService, body)
+	if not decodeOk then
+		return false, "Could not reach the key server."
+	end
+	if data.valid then
+		return true, key
+	end
+	return false, data.message or "That key is not valid."
 end
 
-local pendingIcons = 0
-
-local home = new("ScrollingFrame", {
-	Name = "Home",
-	Size = UDim2.fromScale(1, 1),
-	BackgroundTransparency = 1,
-	BorderSizePixel = 0,
-	ScrollBarThickness = 3,
-	ScrollBarImageColor3 = C.PanelHover,
-	CanvasSize = UDim2.new(),
-	AutomaticCanvasSize = Enum.AutomaticSize.Y,
-}, content)
-new("UIPadding", {
-	PaddingTop = UDim.new(0, 26),
-	PaddingLeft = UDim.new(0, 26),
-	PaddingRight = UDim.new(0, 26),
-	PaddingBottom = UDim.new(0, 26),
-}, home)
-new("UIGridLayout", {
-	CellSize = UDim2.fromOffset(140, 140),
-	CellPadding = UDim2.fromOffset(16, 16),
-	SortOrder = Enum.SortOrder.LayoutOrder,
-	HorizontalAlignment = Enum.HorizontalAlignment.Left,
-	VerticalAlignment = Enum.VerticalAlignment.Top,
-}, home)
-pages.Home = home
-
-local DIM = Color3.fromRGB(205, 205, 205)
-
-for index, g in ipairs(GAMES) do
-	local card = new("ImageButton", {
-		Name = g.Name,
-		LayoutOrder = index,
-		BackgroundColor3 = C.Panel,
-		AutoButtonColor = false,
-		Image = "",
-		ImageColor3 = DIM,
-		ScaleType = Enum.ScaleType.Crop,
-	}, home)
-	corner(card, 20)
-	local scale = new("UIScale", { Scale = 1 }, card)
-
-	local fallbackIcon = makeIcon(card, g.Icon, 48, C.SubText, UDim2.fromScale(0.5, 0.5), Vector2.new(0.5, 0.5))
-
-	pendingIcons += 1
-	task.spawn(function()
-		local ok, info = pcall(function()
-			return MarketplaceService:GetProductInfo(g.PlaceIds[1])
-		end)
-		if ok and info and info.IconImageAssetId and info.IconImageAssetId ~= 0 then
-			card.Image = "rbxassetid://" .. info.IconImageAssetId
-			fallbackIcon.Visible = false
-		end
-		pendingIcons -= 1
-	end)
-
-	card.MouseEnter:Connect(function()
-		tween(scale, 0.18, { Scale = 1.05 })
-		tween(card, 0.18, { ImageColor3 = C.White })
-	end)
-	card.MouseLeave:Connect(function()
-		tween(scale, 0.18, { Scale = 1 })
-		tween(card, 0.18, { ImageColor3 = DIM })
-	end)
-	card.MouseButton1Down:Connect(function()
-		tween(scale, 0.1, { Scale = 0.96 })
-	end)
-	card.MouseButton1Up:Connect(function()
-		tween(scale, 0.1, { Scale = 1.05 })
-	end)
-	card.Activated:Connect(function()
-		launch(g)
-	end)
-end
-
-local settingsPage = new("Frame", {
-	Name = "Settings",
-	Size = UDim2.fromScale(1, 1),
-	BackgroundTransparency = 1,
-	Visible = false,
-}, content)
-new("UIPadding", {
-	PaddingTop = UDim.new(0, 26),
-	PaddingLeft = UDim.new(0, 26),
-	PaddingRight = UDim.new(0, 26),
-}, settingsPage)
-pages.Settings = settingsPage
-
-do
-	local row = new("Frame", {
-		Size = UDim2.new(1, 0, 0, 80),
-		BackgroundColor3 = C.Panel,
-		BorderSizePixel = 0,
-	}, settingsPage)
-	corner(row, 16)
-
-	new("TextLabel", {
-		BackgroundTransparency = 1,
-		Position = UDim2.fromOffset(22, 16),
-		Size = UDim2.new(1, -110, 0, 24),
-		Font = Enum.Font.GothamBold,
-		Text = "AutoLoad",
-		TextColor3 = C.Text,
-		TextSize = 17,
-		TextXAlignment = Enum.TextXAlignment.Left,
-	}, row)
-	new("TextLabel", {
-		BackgroundTransparency = 1,
-		Position = UDim2.fromOffset(22, 42),
-		Size = UDim2.new(1, -110, 0, 20),
-		Font = Enum.Font.Gotham,
-		Text = "Loads the script for the game you are in automatically.",
-		TextColor3 = C.SubText,
-		TextSize = 12,
-		TextXAlignment = Enum.TextXAlignment.Left,
-	}, row)
-
-	local switch = new("TextButton", {
-		AnchorPoint = Vector2.new(1, 0.5),
-		Position = UDim2.new(1, -22, 0.5, 0),
-		Size = UDim2.fromOffset(52, 28),
-		BackgroundColor3 = settings.AutoLoad and C.On or C.Off,
-		AutoButtonColor = false,
-		Text = "",
-	}, row)
-	corner(switch, 14)
-
-	local knob = new("Frame", {
-		AnchorPoint = Vector2.new(0, 0.5),
-		Position = settings.AutoLoad and UDim2.new(1, -25, 0.5, 0) or UDim2.new(0, 3, 0.5, 0),
-		Size = UDim2.fromOffset(22, 22),
-		BackgroundColor3 = C.White,
-		BorderSizePixel = 0,
-	}, switch)
-	corner(knob, 11)
-
-	switch.Activated:Connect(function()
-		settings.AutoLoad = not settings.AutoLoad
-		saveSettings()
-		tween(switch, 0.2, { BackgroundColor3 = settings.AutoLoad and C.On or C.Off })
-		tween(knob, 0.2, {
-			Position = settings.AutoLoad and UDim2.new(1, -25, 0.5, 0) or UDim2.new(0, 3, 0.5, 0),
-		})
-	end)
-end
-
-setTab("Home")
-
-local overlay = new("CanvasGroup", {
-	Name = "Loading",
-	Size = UDim2.fromScale(1, 1),
-	BackgroundColor3 = C.Window,
-	BorderSizePixel = 0,
-	ZIndex = 100,
-}, window)
-corner(overlay, 22)
-
-local barBack = new("Frame", {
-	AnchorPoint = Vector2.new(0.5, 0.5),
-	Position = UDim2.fromScale(0.5, 0.5),
-	Size = UDim2.fromOffset(240, 5),
-	BackgroundColor3 = C.Off,
-	BorderSizePixel = 0,
-}, overlay)
-corner(barBack, 3)
-
-local barFill = new("Frame", {
-	Size = UDim2.fromScale(0, 1),
-	BackgroundColor3 = C.White,
-	BorderSizePixel = 0,
-}, barBack)
-corner(barFill, 3)
-
-tween(barFill, LOAD_TIME, { Size = UDim2.fromScale(1, 1) })
-
-task.spawn(function()
-	local started = os.clock()
-
-	while pendingIcons > 0 and os.clock() - started < 5 do
-		task.wait()
-	end
-
-	local assets = {}
-	for _, d in ipairs(gui:GetDescendants()) do
-		if d:IsA("ImageLabel") or d:IsA("ImageButton") then
-			table.insert(assets, d)
-		end
-	end
-	pcall(function()
-		ContentProvider:PreloadAsync(assets)
-	end)
-
-	local remaining = LOAD_TIME - (os.clock() - started)
-	if remaining > 0 then
-		task.wait(remaining)
-	end
-
-	if not gui.Parent then
-		return
-	end
-
-	tween(overlay, 0.4, { GroupTransparency = 1 })
-	task.wait(0.4)
-	overlay:Destroy()
-
-	if settings.AutoLoad then
-		local g = findCurrentGame()
-		if g then
-			runGame(g)
+local hubSettings = { AutoLoad = false }
+pcall(function()
+	if isfile and readfile and isfile(SETTINGS_FILE) then
+		local data = HttpService:JSONDecode(readfile(SETTINGS_FILE))
+		if type(data) == "table" then
+			hubSettings.AutoLoad = data.AutoLoad == true
 		end
 	end
 end)
+
+local function saveHubSettings()
+	pcall(function()
+		if writefile then
+			writefile(SETTINGS_FILE, HttpService:JSONEncode(hubSettings))
+		end
+	end)
+end
+
+local function buildHub()
+	local gui = new("ScreenGui", {
+		Name = "KawaiHub",
+		ResetOnSpawn = false,
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+		IgnoreGuiInset = true,
+	}, guiParent)
+
+	local window = new("Frame", {
+		Name = "Window",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromScale(0.6, 0.72),
+		BackgroundColor3 = C.Window,
+		BorderSizePixel = 0,
+	}, gui)
+	corner(window, 22)
+	new("UISizeConstraint", { MaxSize = Vector2.new(860, 540), MinSize = Vector2.new(460, 320) }, window)
+
+	local topBar = new("Frame", {
+		Name = "TopBar",
+		Size = UDim2.new(1, 0, 0, 66),
+		BackgroundTransparency = 1,
+	}, window)
+
+	local title = new("Frame", {
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(26, 0),
+		Size = UDim2.new(0, 200, 1, 0),
+	}, topBar)
+	makeIcon(title, "cat", 26, C.White, UDim2.fromScale(0, 0.5), Vector2.new(0, 0.5))
+	new("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(36, 0),
+		Size = UDim2.new(1, -36, 1, 0),
+		Font = Enum.Font.GothamBold,
+		Text = "kawai",
+		TextColor3 = C.White,
+		TextSize = 20,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	}, title)
+
+	do
+		local dragging, dragStart, startPos
+		topBar.InputBegan:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+				dragging = true
+				dragStart = input.Position
+				startPos = window.Position
+				input.Changed:Connect(function()
+					if input.UserInputState == Enum.UserInputState.End then
+						dragging = false
+					end
+				end)
+			end
+		end)
+		UserInputService.InputChanged:Connect(function(input)
+			if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+				local delta = input.Position - dragStart
+				window.Position = UDim2.new(
+					startPos.X.Scale,
+					startPos.X.Offset + delta.X,
+					startPos.Y.Scale,
+					startPos.Y.Offset + delta.Y
+				)
+			end
+		end)
+	end
+
+	local tabHolder = new("Frame", {
+		BackgroundTransparency = 1,
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, -22, 0.5, 0),
+		Size = UDim2.fromOffset(0, 40),
+		AutomaticSize = Enum.AutomaticSize.X,
+	}, topBar)
+	new("UIListLayout", {
+		FillDirection = Enum.FillDirection.Horizontal,
+		HorizontalAlignment = Enum.HorizontalAlignment.Right,
+		VerticalAlignment = Enum.VerticalAlignment.Center,
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		Padding = UDim.new(0, 8),
+	}, tabHolder)
+
+	local pages = {}
+	local tabButtons = {}
+	local currentTab
+
+	local function paintTab(name, hovered)
+		local icon = tabButtons[name].Icon
+		local active = name == currentTab
+		local color = active and C.White or (hovered and C.Text or C.Sub)
+		tween(icon, 0.15, { ImageColor3 = color })
+		for _, child in ipairs(icon:GetChildren()) do
+			if child:IsA("TextLabel") then
+				child.TextColor3 = color
+			end
+		end
+	end
+
+	local function setTab(name)
+		currentTab = name
+		for pageName, page in pairs(pages) do
+			page.Visible = pageName == name
+		end
+		for tabName in pairs(tabButtons) do
+			paintTab(tabName, false)
+		end
+	end
+
+	local function makeTab(name, icon, order)
+		local btn = new("TextButton", {
+			Name = name,
+			LayoutOrder = order,
+			Size = UDim2.fromOffset(40, 40),
+			BackgroundTransparency = 1,
+			AutoButtonColor = false,
+			Text = "",
+		}, tabHolder)
+
+		local img = makeIcon(btn, icon, 24, C.Sub, UDim2.fromScale(0.5, 0.5), Vector2.new(0.5, 0.5))
+		img.Name = "Icon"
+		tabButtons[name] = btn
+
+		btn.MouseEnter:Connect(function()
+			paintTab(name, true)
+		end)
+		btn.MouseLeave:Connect(function()
+			paintTab(name, false)
+		end)
+		btn.Activated:Connect(function()
+			setTab(name)
+		end)
+	end
+
+	makeTab("Home", "gamepad-2", 1)
+	makeTab("Settings", "settings", 2)
+
+	do
+		local close = new("TextButton", {
+			LayoutOrder = 3,
+			Size = UDim2.fromOffset(40, 40),
+			BackgroundTransparency = 1,
+			AutoButtonColor = false,
+			Text = "",
+		}, tabHolder)
+		local closeIcon = makeIcon(close, "x", 24, C.Sub, UDim2.fromScale(0.5, 0.5), Vector2.new(0.5, 0.5))
+		close.MouseEnter:Connect(function()
+			tween(closeIcon, 0.15, { ImageColor3 = C.Error })
+		end)
+		close.MouseLeave:Connect(function()
+			tween(closeIcon, 0.15, { ImageColor3 = C.Sub })
+		end)
+		close.Activated:Connect(function()
+			gui:Destroy()
+		end)
+	end
+
+	local content = new("Frame", {
+		Name = "Content",
+		Position = UDim2.fromOffset(0, 67),
+		Size = UDim2.new(1, 0, 1, -67),
+		BackgroundTransparency = 1,
+	}, window)
+
+	local function runGame(g)
+		task.spawn(function()
+			loadstring(game:HttpGet(g.Url))()
+		end)
+	end
+
+	local function launch(g)
+		gui:Destroy()
+		runGame(g)
+	end
+
+	local function findCurrentGame()
+		for _, g in ipairs(GAMES) do
+			if table.find(g.PlaceIds, game.PlaceId) then
+				return g
+			end
+		end
+	end
+
+	local pendingIcons = 0
+
+	local home = new("ScrollingFrame", {
+		Name = "Home",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		ScrollBarThickness = 3,
+		ScrollBarImageColor3 = C.PanelHover,
+		CanvasSize = UDim2.new(),
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
+	}, content)
+	new("UIPadding", {
+		PaddingTop = UDim.new(0, 26),
+		PaddingLeft = UDim.new(0, 26),
+		PaddingRight = UDim.new(0, 26),
+		PaddingBottom = UDim.new(0, 26),
+	}, home)
+	new("UIGridLayout", {
+		CellSize = UDim2.fromOffset(140, 140),
+		CellPadding = UDim2.fromOffset(16, 16),
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		HorizontalAlignment = Enum.HorizontalAlignment.Left,
+		VerticalAlignment = Enum.VerticalAlignment.Top,
+	}, home)
+	pages.Home = home
+
+	local DIM = Color3.fromRGB(205, 205, 205)
+
+	for index, g in ipairs(GAMES) do
+		local card = new("ImageButton", {
+			Name = g.Name,
+			LayoutOrder = index,
+			BackgroundColor3 = C.Panel,
+			AutoButtonColor = false,
+			Image = "",
+			ImageColor3 = DIM,
+			ScaleType = Enum.ScaleType.Crop,
+		}, home)
+		corner(card, 20)
+		local scale = new("UIScale", { Scale = 1 }, card)
+
+		local fallbackIcon = makeIcon(card, g.Icon, 48, C.Sub, UDim2.fromScale(0.5, 0.5), Vector2.new(0.5, 0.5))
+
+		pendingIcons += 1
+		task.spawn(function()
+			local ok, info = pcall(function()
+				return MarketplaceService:GetProductInfo(g.PlaceIds[1])
+			end)
+			if ok and info and info.IconImageAssetId and info.IconImageAssetId ~= 0 then
+				card.Image = "rbxassetid://" .. info.IconImageAssetId
+				fallbackIcon.Visible = false
+			end
+			pendingIcons -= 1
+		end)
+
+		card.MouseEnter:Connect(function()
+			tween(scale, 0.18, { Scale = 1.05 })
+			tween(card, 0.18, { ImageColor3 = C.White })
+		end)
+		card.MouseLeave:Connect(function()
+			tween(scale, 0.18, { Scale = 1 })
+			tween(card, 0.18, { ImageColor3 = DIM })
+		end)
+		card.MouseButton1Down:Connect(function()
+			tween(scale, 0.1, { Scale = 0.96 })
+		end)
+		card.MouseButton1Up:Connect(function()
+			tween(scale, 0.1, { Scale = 1.05 })
+		end)
+		card.Activated:Connect(function()
+			launch(g)
+		end)
+	end
+
+	local settingsPage = new("Frame", {
+		Name = "Settings",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		Visible = false,
+	}, content)
+	new("UIPadding", {
+		PaddingTop = UDim.new(0, 26),
+		PaddingLeft = UDim.new(0, 26),
+		PaddingRight = UDim.new(0, 26),
+	}, settingsPage)
+	pages.Settings = settingsPage
+
+	do
+		local row = new("Frame", {
+			Size = UDim2.new(1, 0, 0, 80),
+			BackgroundColor3 = C.Panel,
+			BorderSizePixel = 0,
+		}, settingsPage)
+		corner(row, 16)
+
+		new("TextLabel", {
+			BackgroundTransparency = 1,
+			Position = UDim2.fromOffset(22, 16),
+			Size = UDim2.new(1, -110, 0, 24),
+			Font = Enum.Font.GothamBold,
+			Text = "AutoLoad",
+			TextColor3 = C.Text,
+			TextSize = 17,
+			TextXAlignment = Enum.TextXAlignment.Left,
+		}, row)
+		new("TextLabel", {
+			BackgroundTransparency = 1,
+			Position = UDim2.fromOffset(22, 42),
+			Size = UDim2.new(1, -110, 0, 20),
+			Font = Enum.Font.Gotham,
+			Text = "Loads the script for the game you are in automatically.",
+			TextColor3 = C.Sub,
+			TextSize = 12,
+			TextXAlignment = Enum.TextXAlignment.Left,
+		}, row)
+
+		local switch = new("TextButton", {
+			AnchorPoint = Vector2.new(1, 0.5),
+			Position = UDim2.new(1, -22, 0.5, 0),
+			Size = UDim2.fromOffset(52, 28),
+			BackgroundColor3 = hubSettings.AutoLoad and C.Accent or C.Off,
+			AutoButtonColor = false,
+			Text = "",
+		}, row)
+		corner(switch, 14)
+
+		local knob = new("Frame", {
+			AnchorPoint = Vector2.new(0, 0.5),
+			Position = hubSettings.AutoLoad and UDim2.new(1, -25, 0.5, 0) or UDim2.new(0, 3, 0.5, 0),
+			Size = UDim2.fromOffset(22, 22),
+			BackgroundColor3 = C.White,
+			BorderSizePixel = 0,
+		}, switch)
+		corner(knob, 11)
+
+		switch.Activated:Connect(function()
+			hubSettings.AutoLoad = not hubSettings.AutoLoad
+			saveHubSettings()
+			tween(switch, 0.2, { BackgroundColor3 = hubSettings.AutoLoad and C.Accent or C.Off })
+			tween(knob, 0.2, {
+				Position = hubSettings.AutoLoad and UDim2.new(1, -25, 0.5, 0) or UDim2.new(0, 3, 0.5, 0),
+			})
+		end)
+	end
+
+	setTab("Home")
+
+	local overlay = new("CanvasGroup", {
+		Name = "Loading",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = C.Window,
+		BorderSizePixel = 0,
+		ZIndex = 100,
+	}, window)
+	corner(overlay, 22)
+
+	local barBack = new("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(240, 5),
+		BackgroundColor3 = C.Off,
+		BorderSizePixel = 0,
+	}, overlay)
+	corner(barBack, 3)
+
+	local barFill = new("Frame", {
+		Size = UDim2.fromScale(0, 1),
+		BackgroundColor3 = C.White,
+		BorderSizePixel = 0,
+	}, barBack)
+	corner(barFill, 3)
+
+	tween(barFill, LOAD_TIME, { Size = UDim2.fromScale(1, 1) })
+
+	task.spawn(function()
+		local started = os.clock()
+
+		while pendingIcons > 0 and os.clock() - started < 5 do
+			task.wait()
+		end
+
+		local assets = {}
+		for _, d in ipairs(gui:GetDescendants()) do
+			if d:IsA("ImageLabel") or d:IsA("ImageButton") then
+				table.insert(assets, d)
+			end
+		end
+		pcall(function()
+			ContentProvider:PreloadAsync(assets)
+		end)
+
+		local remaining = LOAD_TIME - (os.clock() - started)
+		if remaining > 0 then
+			task.wait(remaining)
+		end
+
+		if not gui.Parent then
+			return
+		end
+
+		tween(overlay, 0.4, { GroupTransparency = 1 })
+		task.wait(0.4)
+		overlay:Destroy()
+
+		if hubSettings.AutoLoad then
+			local g = findCurrentGame()
+			if g then
+				runGame(g)
+			end
+		end
+	end)
+end
+
+local function buildKeySystem()
+	local gui = new("ScreenGui", {
+		Name = "KawaiKeySystem",
+		ResetOnSpawn = false,
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+		IgnoreGuiInset = true,
+	}, guiParent)
+
+	local window = new("Frame", {
+		Name = "Window",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(792, 392),
+		BackgroundColor3 = C.Window,
+		BorderSizePixel = 0,
+	}, gui)
+	corner(window, 18)
+
+	local camera = workspace.CurrentCamera
+	local viewport = camera and camera.ViewportSize or Vector2.new(1280, 720)
+	new("UIScale", { Scale = math.min(1, viewport.X / 840, viewport.Y / 440) }, window)
+
+	local header = new("Frame", {
+		Size = UDim2.new(1, 0, 0, 64),
+		BackgroundTransparency = 1,
+	}, window)
+
+	makeIcon(header, "cat", 32, C.Accent, UDim2.fromOffset(18, 16), Vector2.new())
+
+	new("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(62, 12),
+		Size = UDim2.fromOffset(200, 24),
+		Font = Enum.Font.GothamBold,
+		Text = "kawai",
+		TextColor3 = C.Text,
+		TextSize = 20,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	}, header)
+
+	new("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(62, 37),
+		Size = UDim2.fromOffset(200, 14),
+		Font = Enum.Font.Gotham,
+		Text = "Key System",
+		TextColor3 = C.Sub,
+		TextSize = 11,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	}, header)
+
+	do
+		local dragging, dragStart, startPos
+		header.InputBegan:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+				dragging = true
+				dragStart = input.Position
+				startPos = window.Position
+				input.Changed:Connect(function()
+					if input.UserInputState == Enum.UserInputState.End then
+						dragging = false
+					end
+				end)
+			end
+		end)
+		UserInputService.InputChanged:Connect(function(input)
+			if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+				local delta = input.Position - dragStart
+				window.Position = UDim2.new(
+					startPos.X.Scale,
+					startPos.X.Offset + delta.X,
+					startPos.Y.Scale,
+					startPos.Y.Offset + delta.Y
+				)
+			end
+		end)
+	end
+
+	do
+		local close = new("TextButton", {
+			AnchorPoint = Vector2.new(1, 0),
+			Position = UDim2.new(1, -16, 0, 14),
+			Size = UDim2.fromOffset(36, 36),
+			BackgroundTransparency = 1,
+			AutoButtonColor = false,
+			Text = "",
+		}, window)
+		local icon = makeIcon(close, "x", 22, C.Text, UDim2.fromScale(0.5, 0.5), Vector2.new(0.5, 0.5))
+		close.MouseEnter:Connect(function()
+			tween(icon, 0.15, { ImageColor3 = C.Error })
+		end)
+		close.MouseLeave:Connect(function()
+			tween(icon, 0.15, { ImageColor3 = C.Text })
+		end)
+		close.Activated:Connect(function()
+			gui:Destroy()
+		end)
+	end
+
+	new("Frame", {
+		Position = UDim2.fromOffset(395, 92),
+		Size = UDim2.fromOffset(1, 284),
+		BackgroundColor3 = C.Line,
+		BorderSizePixel = 0,
+	}, window)
+
+	local keyBox = new("TextBox", {
+		Position = UDim2.fromOffset(22, 126),
+		Size = UDim2.fromOffset(360, 54),
+		BackgroundColor3 = C.Panel,
+		BorderSizePixel = 0,
+		ClearTextOnFocus = false,
+		Font = Enum.Font.Gotham,
+		PlaceholderText = "Enter your key...",
+		PlaceholderColor3 = C.Sub,
+		Text = "",
+		TextColor3 = C.Text,
+		TextSize = 15,
+	}, window)
+	corner(keyBox, 14)
+
+	local helper = new("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(22, 196),
+		Size = UDim2.fromOffset(360, 32),
+		Font = Enum.Font.Gotham,
+		Text = HELP_TEXT,
+		TextColor3 = C.Sub,
+		TextSize = 11,
+		TextWrapped = true,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Top,
+	}, window)
+
+	local function setStatus(text, color)
+		helper.Text = text
+		helper.TextColor3 = color or C.Sub
+	end
+
+	local function makeButton(text, position, size, filled)
+		local btn = new("TextButton", {
+			Position = position,
+			Size = size,
+			BackgroundColor3 = filled and C.Accent or C.Panel,
+			AutoButtonColor = false,
+			Font = Enum.Font.GothamBold,
+			Text = text,
+			TextColor3 = filled and C.Dark or C.Text,
+			TextSize = 15,
+		}, window)
+		corner(btn, 14)
+		local rest = filled and C.Accent or C.Panel
+		local hover = filled and C.AccentHover or C.PanelHover
+		btn.MouseEnter:Connect(function()
+			tween(btn, 0.15, { BackgroundColor3 = hover })
+		end)
+		btn.MouseLeave:Connect(function()
+			tween(btn, 0.15, { BackgroundColor3 = rest })
+		end)
+		return btn
+	end
+
+	local dropdown = makeButton("", UDim2.fromOffset(22, 240), UDim2.fromOffset(172, 54), false)
+	new("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(18, 0),
+		Size = UDim2.new(1, -50, 1, 0),
+		Font = Enum.Font.GothamMedium,
+		Text = "Get Key",
+		TextColor3 = C.Text,
+		TextSize = 15,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	}, dropdown)
+	local chevron = makeIcon(dropdown, "chevron-down", 18, C.Text, UDim2.new(1, -18, 0.5, 0), Vector2.new(1, 0.5))
+
+	local redeem = makeButton("Redeem Key", UDim2.fromOffset(210, 240), UDim2.fromOffset(172, 54), true)
+
+	local list = new("Frame", {
+		Position = UDim2.fromOffset(22, 300),
+		Size = UDim2.fromOffset(172, #PROVIDERS * 40 + 8),
+		BackgroundColor3 = C.PanelHover,
+		BorderSizePixel = 0,
+		Visible = false,
+		ZIndex = 20,
+	}, window)
+	corner(list, 12)
+
+	local listOpen = false
+
+	local function setList(open)
+		listOpen = open
+		list.Visible = open
+		tween(chevron, 0.15, { Rotation = open and 180 or 0 })
+	end
+
+	for index, provider in ipairs(PROVIDERS) do
+		local option = new("TextButton", {
+			Position = UDim2.fromOffset(4, 4 + (index - 1) * 40),
+			Size = UDim2.new(1, -8, 0, 36),
+			BackgroundColor3 = C.PanelHover,
+			AutoButtonColor = false,
+			Font = Enum.Font.GothamMedium,
+			Text = provider.Name,
+			TextColor3 = C.Text,
+			TextSize = 14,
+			ZIndex = 21,
+		}, list)
+		corner(option, 10)
+		option.MouseEnter:Connect(function()
+			tween(option, 0.12, { BackgroundColor3 = Color3.fromRGB(46, 46, 46) })
+		end)
+		option.MouseLeave:Connect(function()
+			tween(option, 0.12, { BackgroundColor3 = C.PanelHover })
+		end)
+		option.Activated:Connect(function()
+			setList(false)
+			if copyText(provider.Url) then
+				setStatus("Key link copied. Open it in your browser, then paste your key here.", C.Accent)
+			else
+				setStatus("Copy this link manually: " .. provider.Url, C.Error)
+			end
+		end)
+	end
+
+	dropdown.Activated:Connect(function()
+		setList(not listOpen)
+	end)
+
+	local submitting = false
+	local function submit()
+		if submitting then return end
+		submitting = true
+		setStatus("Checking key...", C.Sub)
+
+		local ok, result = validateKey(keyBox.Text)
+		if not ok then
+			setStatus(result, C.Error)
+			submitting = false
+			return
+		end
+
+		setStatus("Key accepted. Loading...", C.Accent)
+		task.wait(0.3)
+		gui:Destroy()
+		buildHub()
+	end
+
+	redeem.Activated:Connect(submit)
+	keyBox.FocusLost:Connect(function(enterPressed)
+		if enterPressed then
+			submit()
+		end
+	end)
+
+	local function faqLabel(text, y, height, size, font, color)
+		return new("TextLabel", {
+			BackgroundTransparency = 1,
+			Position = UDim2.fromOffset(408, y),
+			Size = UDim2.fromOffset(360, height),
+			Font = font,
+			Text = text,
+			TextColor3 = color,
+			TextSize = size,
+			TextWrapped = true,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextYAlignment = Enum.TextYAlignment.Top,
+		}, window)
+	end
+
+	faqLabel("FAQ", 88, 24, 17, Enum.Font.GothamBold, C.Text)
+	faqLabel("Is this script free?", 124, 18, 13, Enum.Font.GothamBold, C.Accent)
+	faqLabel(
+		"Yes. Press Get Key, choose a provider, and tap it to copy the link. Open that link in your browser, copy the key you receive, then paste it here.",
+		146,
+		52,
+		12,
+		Enum.Font.Gotham,
+		C.Answer
+	)
+	faqLabel("How long does a key last?", 206, 18, 13, Enum.Font.GothamBold, C.Accent)
+	faqLabel(
+		describeDuration(KEY_LIFETIME) .. ". When it expires, press Get Key again to get a new one. Need help? Join our Discord.",
+		228,
+		36,
+		12,
+		Enum.Font.Gotham,
+		C.Answer
+	)
+
+	local discord = makeButton("Join Discord", UDim2.fromOffset(408, 268), UDim2.fromOffset(360, 46), true)
+	discord.Activated:Connect(function()
+		if copyText(DISCORD_URL) then
+			setStatus("Discord invite copied. Paste it in your browser.", C.Accent)
+		else
+			setStatus("Copy this invite manually: " .. DISCORD_URL, C.Error)
+		end
+	end)
+end
+
+buildKeySystem()
